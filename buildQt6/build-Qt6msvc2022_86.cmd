@@ -1,72 +1,46 @@
-name: build_Qt6.8.3_msvc2022_x86
+@chcp 65001
+@cd /d %~dp0
 
-on: workflow_dispatch
-#on: [push, pull_request]
+:: 设置Qt版本
+SET QT_VERSION=6.8.3
 
-env:
-  QT_VERSION: 6.8.3
-  QT_VERSION2: 6.8
-  FILE_NAME: shared-Debug-Release_msvc2022_x86
+:: 设置MSVC版本代号 (修改为x86以作区分)
+SET MSVC_VERSION=msvc2022_x86
 
-jobs:
-  windows_msvc_shared_debug_release:
-    runs-on: windows-latest
+:: 设置MSVC2022环境 (核心修改：将 amd64 改为 x86)
+CALL "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x86
 
-    steps:
-    # 检出本仓库
-    - name: Checkout repository
-      uses: actions/checkout@v4
+:: 设置Qt文件夹路径
+SET QT_PATH=D:\a\buildQt\Qt
 
-    # 安装python (修改为x86)
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.13'
-        architecture: 'x86'
+::----------以下无需修改----------
 
-    # 安装msvc (修改为x86)
-    - name: Add MSBuild to PATH
-      uses: microsoft/setup-msbuild@v2
-      with:
-        msbuild-architecture: x86
+:: 设置Qt源代码目录
+SET SRC_QT="%QT_PATH%\%QT_VERSION%\qt-everywhere-src-%QT_VERSION%"
 
-    # 安装vsdevenv
-    - name: Setup vsdevenv
-      uses: seanmiddleditch/gha-setup-vsdevenv@master
+:: 设置安装文件夹目录
+SET INSTALL_DIR="%QT_PATH%\%QT_VERSION%-shared\%MSVC_VERSION%"
 
-    # 构建Qt
-    - name: Build Qt
-      run: |
-        #ls     #Directory: D:\a\buildQt\buildQt(即仓库目录)
-        #D:\a\buildQt                                上级目录，这里当做根目录
-        #D:\a\buildQt\Qt                             Qt目录
-        #D:\a\buildQt\Qt\${{env.QT_VERSION}}         Qt目录源代码和build文件夹存放目录
-        #D:\a\buildQt\Qt\${{env.QT_VERSION}}-shared  Qt安装目录
-        
-        # 创建文件夹
-        cd ..  #Directory: D:\a\buildQt
-        mkdir -p Qt
+:: 设置build文件夹目录
+SET BUILD_DIR="%QT_PATH%\%QT_VERSION%\build-%MSVC_VERSION%"
 
-        # 创建文件夹
-        cd Qt   #Directory: D:\a\buildQt\Qt
-        mkdir -p ${{env.QT_VERSION}}
-        mkdir -p ${{env.QT_VERSION}}-shared
+:: 根据需要进行全新构建
+rmdir /s /q "%BUILD_DIR%"
+:: 定位到构建目录：
+mkdir "%BUILD_DIR%" && cd /d "%BUILD_DIR%"
 
-        # 下载源代码并解压，源代码目录D:\a\buildQt\Qt\${{env.QT_VERSION}}\XXX
-        curl -L -o qt-everywhere-src.zip https://download.qt.io/official_releases/qt/${{env.QT_VERSION2}}/${{env.QT_VERSION}}/single/qt-everywhere-src-${{env.QT_VERSION}}.zip
-        unzip -q qt-everywhere-src.zip -d ./${{env.QT_VERSION}}
+:: configure
+:: 保持 -shared -debug-and-release 以实现动态库双版本构建
+call %SRC_QT%\configure.bat -shared -debug-and-release -prefix %INSTALL_DIR% -nomake examples -nomake tests -skip qtwebengine -opensource -confirm-license -qt-libpng -qt-libjpeg -qt-zlib -qt-pcre -qt-freetype -schannel -platform win32-msvc
 
-        # 调用编译脚本 (注意脚本名已改为 x86 版本)
-        cmd.exe /c "call `"D:\a\buildQt\buildQt\buildQt6\build-Qt6msvc2022_86.cmd`""
+:: 编译
+cmake --build . --parallel
 
-    # 打包
-    - name: Package binaries
-      run: |
-        #ls     #Directory: D:\a\buildQt\buildQt(即仓库目录)
-        7z a Qt_${{env.QT_VERSION}}-${{env.FILE_NAME}}.7z ../Qt/${{env.QT_VERSION}}-shared -mx=9
+:: 安装 (根据你提供的最新脚本，使用 ninja install)
+ninja install
 
-    # 上传
-    - uses: actions/upload-artifact@v4
-      with:
-        name: Qt_${{env.QT_VERSION}}-${{env.FILE_NAME}}
-        path: Qt_${{env.QT_VERSION}}-${{env.FILE_NAME}}.7z
+:: 复制qt.conf
+copy %~dp0\qt.conf %INSTALL_DIR%\bin
+
+::@pause
+@cmd /k cd /d %INSTALL_DIR%
